@@ -5,7 +5,6 @@
 import streamlit as st
 import json, os, math, random, uuid, hashlib
 from datetime import date, datetime
-import openai
 
 # =========================
 # FILES / CONSTANTS
@@ -841,60 +840,22 @@ Output:
 # TAB 7: AI QUEST GENERATOR
 # =========================
 with tab7:
-    st.title("🤖 AI Quest Generator")
-    st.caption("Generate quests automatically. Uses OpenAI if available, otherwise offline mode.")
+    st.title("🤖 AI Quest Generator (Offline)")
+    st.caption("Generate quests automatically (Offline Mode only).")
 
     work_request = st.text_area("Describe your task / feature", height=180, key="ai_work")
-
-    use_offline = st.toggle("Use Offline Mode (no API)", value=True, key="ai_offline")
-    model_name = st.selectbox("Model", ["gpt-4o-mini", "gpt-4.1-mini"], index=0, key="ai_model")
 
     if st.button("⚡ Generate Quests", key="ai_generate"):
         if not work_request.strip():
             st.warning("Please describe the task first.")
             st.stop()
 
-        if use_offline:
+        try:
             ai_data = offline_generate_quests(work_request)
             st.success("Generated with Offline Mode ✅")
-        else:
-            try:
-                client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
-                system_prompt = """
-You are a Game Master for a Developer RPG.
-Convert the requirement into structured JSON quests.
-
-Return ONLY JSON like:
-{
-  "main_quest": "...",
-  "quests": [
-    {"name":"...", "difficulty":"Easy|Medium|Hard", "xp":40, "focus_cost":20, "stat_gain":"intelligence|speed|stability"}
-  ]
-}
-""".strip()
-
-                resp = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": work_request}
-                    ],
-                    temperature=0.4
-                )
-
-                ai_text = (resp.choices[0].message.content or "").strip()
-                if ai_text.startswith("```"):
-                    ai_text = ai_text.strip("`")
-                    ai_text = ai_text.replace("json", "", 1).strip()
-
-                ai_data = json.loads(ai_text)
-                st.success("Generated with OpenAI ✅")
-
-            except Exception as e:
-                st.error(f"OpenAI failed: {e}")
-                st.info("Falling back to Offline Mode…")
-                ai_data = offline_generate_quests(work_request)
+        except Exception as e:
+            st.error(f"Offline generator failed: {e}")
+            st.stop()
 
         st.write("### 🎯 Main Quest")
         st.write(ai_data.get("main_quest", ""))
@@ -903,12 +864,12 @@ Return ONLY JSON like:
         for q in ai_data.get("quests", []):
             quest = {
                 "id": next_id(),
-                "name": q["name"],
-                "difficulty": q["difficulty"],
-                "xp": int(q["xp"]),
-                "coins": max(1, int(int(q["xp"]) / 5)),
-                "focus_cost": int(q["focus_cost"]),
-                "stat_gain": q["stat_gain"],
+                "name": q.get("name", "Untitled Quest"),
+                "difficulty": q.get("difficulty", "Easy"),
+                "xp": int(q.get("xp", 40)),
+                "coins": max(1, int(int(q.get("xp", 40)) / 5)),
+                "focus_cost": int(q.get("focus_cost", 20)),
+                "stat_gain": q.get("stat_gain", "intelligence"),
                 "created_date": today,
                 "done": False,
                 "done_date": None
@@ -918,5 +879,6 @@ Return ONLY JSON like:
 
         log(data, "AI_IMPORT", f"Imported {added} quests")
         save_data(DATA_FILE, data)
+
         st.balloons()
         st.success(f"✅ Added {added} quests to your Campaign tab!")
